@@ -1,0 +1,148 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ===== AUTH =====
+model User {
+  id             String    @id @default(cuid())
+  name           String
+  email          String    @unique
+  emailVerified  DateTime?
+  hashedPassword String?
+  image          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Profile
+  experience     String    @default("iniciante") // iniciante | intermediario | avancado
+  goal           String    @default("profissao_principal")
+  focus          String    @default("domicilio")
+  availability   String    @default("moderado")
+
+  // Gamification
+  xp             Int       @default(0)
+  streakDays     Int       @default(0)
+  lastActiveDate String?
+  currentLevel   String    @default("none") // CertificationLevel
+
+  // Relations
+  accounts       Account[]
+  sessions       Session[]
+  clinicalSessions ClinicalSession[]
+  simulations    SimulationResult[]
+  achievements   UserAchievement[]
+  moduleProgress ModuleProgress[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ===== CLINICAL DIARY =====
+model ClinicalSession {
+  id            String   @id @default(cuid())
+  userId        String
+  date          DateTime @default(now())
+  patientName   String
+  region        String   // BodyRegion
+  technique     String   // Technique (LIFE, SOFT, FIT, DETOX)
+  muscleId      String
+  protocolId    String
+  painBefore    Int
+  painAfter     Int
+  duration      Int      // minutes
+  chargedAmount Float    @default(0)
+  notes         String   @default("")
+  photoUrl      String?
+  isPublic      Boolean  @default(false) // for portfolio
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, technique])
+}
+
+// ===== SIMULATOR =====
+model SimulationResult {
+  id                String   @id @default(cuid())
+  userId            String
+  virtualPatientId  String
+  difficulty        String   // SimulatorDifficulty
+  selectedMuscle    String
+  correctMuscle     String
+  selectedProtocol  String
+  correctProtocol   String
+  score             Int
+  feedback          String   @default("")
+  completedAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ===== GAMIFICATION =====
+model UserAchievement {
+  id            String   @id @default(cuid())
+  userId        String
+  achievementId String
+  unlockedAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@index([userId])
+}
+
+// ===== MODULE PROGRESS =====
+model ModuleProgress {
+  id         String   @id @default(cuid())
+  userId     String
+  moduleId   String   // e.g. "life_basic", "soft_advanced"
+  technique  String
+  progress   Float    @default(0) // 0-100
+  isComplete Boolean  @default(false)
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, moduleId])
+  @@index([userId])
+}
