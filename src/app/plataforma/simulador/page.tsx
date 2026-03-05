@@ -57,7 +57,7 @@ export default function SimuladorPage() {
     setPhase("protocol");
   };
 
-  const submitProtocol = () => {
+  const submitProtocol = async () => {
     if (!patient) return;
     let totalScore = 0;
 
@@ -85,6 +85,25 @@ export default function SimuladorPage() {
 
     setScore(totalScore);
     setPhase("result");
+
+    // Save result to API
+    try {
+      await fetch("/api/simulator", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          virtualPatientId: patient.id,
+          difficulty: patient.difficulty,
+          selectedMuscle,
+          correctMuscle: patient.correctMuscle,
+          selectedProtocol,
+          correctProtocol: patient.correctProtocol,
+          score: totalScore,
+        }),
+      });
+    } catch {
+      // Silently fail - result still shown to user
+    }
   };
 
   const reset = () => {

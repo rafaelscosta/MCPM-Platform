@@ -1,9 +1,49 @@
 "use client";
 
 import { certifications, certificationOrder } from "@/data/certifications";
+import { useStudent } from "@/hooks/useStudent";
+import type { CertificationLevel } from "@/types";
 
 export default function CertificacoesPage() {
-  const currentLevel = "praticante_pedala";
+  const { data, loading } = useStudent();
+
+  const currentLevel = (data?.user.currentLevel || "praticante_pedala") as CertificationLevel;
+  const stats = data?.stats;
+
+  if (loading) {
+    return <div className="text-center text-gray-400 py-12">Carregando certificações...</div>;
+  }
+
+  // Calculate real progress for requirements
+  const getProgress = (reqDescription: string): number => {
+    if (!stats) return 0;
+    const desc = reqDescription.toLowerCase();
+    if (desc.includes("atendimentos life") || desc.includes("sessões life")) {
+      return Math.min(100, ((stats.sessionsByTechnique?.["LIFE"] || 0) / 20) * 100);
+    }
+    if (desc.includes("atendimentos soft") || desc.includes("sessões soft")) {
+      return Math.min(100, ((stats.sessionsByTechnique?.["SOFT"] || 0) / 15) * 100);
+    }
+    if (desc.includes("atendimentos fit") || desc.includes("sessões fit")) {
+      return Math.min(100, ((stats.sessionsByTechnique?.["FIT"] || 0) / 15) * 100);
+    }
+    if (desc.includes("atendimentos detox") || desc.includes("sessões detox")) {
+      return Math.min(100, ((stats.sessionsByTechnique?.["DETOX"] || 0) / 15) * 100);
+    }
+    if (desc.includes("efetividade") || desc.includes("redução")) {
+      return Math.min(100, (stats.avgReduction / 70) * 100);
+    }
+    if (desc.includes("simulaç")) {
+      return Math.min(100, (stats.avgSimScore / 80) * 100);
+    }
+    if (desc.includes("atendimentos") || desc.includes("sessões")) {
+      return Math.min(100, (stats.totalSessions / 60) * 100);
+    }
+    if (desc.includes("protocolo")) {
+      return Math.min(100, (stats.completedProtocols / 10) * 100);
+    }
+    return 0;
+  };
 
   return (
     <div className="space-y-6">
@@ -15,21 +55,22 @@ export default function CertificacoesPage() {
       </div>
 
       {/* Current Status */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-6">
+      <div className="bg-white rounded-2xl border border-gray-200 p-6 animate-card-enter">
         <div className="flex items-center gap-4">
-          <div className="text-4xl">{certifications[currentLevel].icon}</div>
+          <div className="text-4xl">{certifications[currentLevel]?.icon || "🤲"}</div>
           <div>
             <div className="text-sm text-gray-400">Nível Atual</div>
-            <div className="text-xl font-bold">{certifications[currentLevel].name}</div>
-            <div className="text-sm text-gray-500">{certifications[currentLevel].description}</div>
+            <div className="text-xl font-bold">{certifications[currentLevel]?.name || "Praticante PEDALA"}</div>
+            <div className="text-sm text-gray-500">{certifications[currentLevel]?.description}</div>
           </div>
         </div>
       </div>
 
       {/* Certification Stack */}
       <div className="space-y-4">
-        {certificationOrder.filter(id => id !== "none").map((id, index) => {
+        {certificationOrder.filter(id => id !== "none").map((id) => {
           const cert = certifications[id];
+          if (!cert) return null;
           const isCurrent = id === currentLevel;
           const isPast = certificationOrder.indexOf(id) < certificationOrder.indexOf(currentLevel);
           const isNext = certificationOrder.indexOf(id) === certificationOrder.indexOf(currentLevel) + 1;
@@ -37,7 +78,7 @@ export default function CertificacoesPage() {
           return (
             <div
               key={id}
-              className={`bg-white rounded-xl border-2 p-5 transition ${
+              className={`bg-white rounded-xl border-2 p-5 transition animate-card-enter ${
                 isCurrent ? "border-primary shadow-md" :
                 isPast ? "border-green-200 bg-green-50" :
                 isNext ? "border-yellow-200" :
@@ -62,11 +103,11 @@ export default function CertificacoesPage() {
                 </div>
               </div>
 
-              {/* Requirements */}
+              {/* Requirements with real progress */}
               {(isCurrent || isNext) && cert.requirements.length > 0 && (
                 <div className="mt-4 pt-4 border-t border-gray-100 space-y-2">
                   {cert.requirements.map((req, i) => {
-                    const progress = isCurrent ? Math.min(100, Math.random() * 100) : 0;
+                    const progress = isPast ? 100 : getProgress(req.description);
                     return (
                       <div key={i} className="space-y-1">
                         <div className="flex items-center justify-between text-xs">
@@ -75,7 +116,7 @@ export default function CertificacoesPage() {
                         </div>
                         <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                           <div
-                            className={`h-full rounded-full transition-all ${isPast || progress >= 100 ? "bg-green-500" : "bg-primary"}`}
+                            className={`h-full rounded-full transition-all ${progress >= 100 ? "bg-green-500" : "bg-primary"}`}
                             style={{ width: `${progress}%` }}
                           />
                         </div>
