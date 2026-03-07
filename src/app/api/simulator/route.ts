@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { simulationSchema } from "@/lib/validations";
+import { rateLimit } from "@/lib/rateLimit";
 
 // POST /api/simulator - Save simulation result
 export async function POST(request: NextRequest) {
@@ -10,34 +12,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
 
+    const { allowed } = rateLimit(`sim:${session.user.id}`, { maxRequests: 30, windowMs: 60000 });
+    if (!allowed) {
+      return NextResponse.json({ error: "Rate limit excedido" }, { status: 429 });
+    }
+
     const body = await request.json();
-    const {
-      virtualPatientId,
-      difficulty,
-      selectedMuscle,
-      correctMuscle,
-      selectedProtocol,
-      correctProtocol,
-      score,
-      feedback,
-    } = body;
+    const parsed = simulationSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+    }
+
+    const data = parsed.data;
 
     const result = await prisma.simulationResult.create({
       data: {
         userId: session.user.id,
-        virtualPatientId,
-        difficulty,
-        selectedMuscle,
-        correctMuscle,
-        selectedProtocol,
-        correctProtocol,
-        score,
-        feedback: feedback || "",
+        virtualPatientId: data.virtualPatientId,
+        difficulty: data.difficulty,
+        selectedMuscle: data.selectedMuscle,
+        correctMuscle: data.correctMuscle,
+        selectedProtocol: data.selectedProtocol,
+        correctProtocol: data.correctProtocol,
+        score: data.score,
+        feedback: data.feedback || "",
       },
     });
 
-    // Award XP based on score
-    const xpReward = Math.round(score * 0.5);
+    const xpReward = Math.round(data.score * 0.5);
     await prisma.user.update({
       where: { id: session.user.id },
       data: { xp: { increment: xpReward } },

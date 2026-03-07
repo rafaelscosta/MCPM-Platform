@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { sessionSchema } from "@/lib/validations";
+import { rateLimit } from "@/lib/rateLimit";
 
 // GET /api/sessions - List clinical sessions
 export async function GET(request: NextRequest) {
@@ -10,9 +12,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
 
+    const { allowed } = rateLimit(`sessions-get:${session.user.id}`, { maxRequests: 60, windowMs: 60000 });
+    if (!allowed) {
+      return NextResponse.json({ error: "Rate limit excedido" }, { status: 429 });
+    }
+
     const searchParams = request.nextUrl.searchParams;
     const technique = searchParams.get("technique");
-    const limit = parseInt(searchParams.get("limit") || "50");
+    const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
 
     const sessions = await prisma.clinicalSession.findMany({
       where: {
@@ -23,7 +30,6 @@ export async function GET(request: NextRequest) {
       take: limit,
     });
 
-    // Calculate stats
     const allSessions = await prisma.clinicalSession.findMany({
       where: { userId: session.user.id },
     });
@@ -57,42 +63,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
 
-    const body = await request.json();
-    const {
-      patientName,
-      region,
-      technique,
-      muscleId,
-      protocolId,
-      painBefore,
-      painAfter,
-      duration,
-      chargedAmount,
-      notes,
-      isPublic,
-    } = body;
-
-    if (!patientName || !region || !technique || !muscleId || !protocolId) {
-      return NextResponse.json(
-        { error: "Campos obrigatórios faltando" },
-        { status: 400 }
-      );
+    const { allowed } = rateLimit(`sessions-post:${session.user.id}`, { maxRequests: 20, windowMs: 60000 });
+    if (!allowed) {
+      return NextResponse.json({ error: "Rate limit excedido" }, { status: 429 });
     }
+
+    const body = await request.json();
+    const parsed = sessionSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+    }
+
+    const data = parsed.data;
 
     const clinicalSession = await prisma.clinicalSession.create({
       data: {
         userId: session.user.id,
-        patientName,
-        region,
-        technique,
-        muscleId,
-        protocolId,
-        painBefore: painBefore || 0,
-        painAfter: painAfter || 0,
-        duration: duration || 0,
-        chargedAmount: chargedAmount || 0,
-        notes: notes || "",
-        isPublic: isPublic || false,
+        patientName: data.patientName,
+        region: data.region,
+        technique: data.technique,
+        muscleId: data.muscleId,
+        protocolId: data.protocolId,
+        painBefore: data.painBefore,
+        painAfter: data.painAfter,
+        duration: data.duration,
+        chargedAmount: data.chargedAmount,
+        notes: data.notes || "",
+        isPublic: body.isPublic || false,
       },
     });
 
@@ -101,7 +98,6 @@ export async function POST(request: NextRequest) {
       where: { userId: session.user.id },
     });
 
-    // Award XP
     await prisma.user.update({
       where: { id: session.user.id },
       data: {
@@ -110,8 +106,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Check achievements
-    await checkAchievements(session.user.id, userSessions, chargedAmount);
+    await checkAchievements(session.user.id, userSessions, data.chargedAmount);
 
     return NextResponse.json(clinicalSession);
   } catch (error) {
@@ -133,22 +128,13 @@ async function checkAchievements(userId: string, totalSessions: number, chargedA
   for (const achievement of achievementsToCheck) {
     if (achievement.condition) {
       await prisma.userAchievement.upsert({
-        where: {
-          userId_achievementId: {
-            userId,
-            achievementId: achievement.id,
-          },
-        },
+        where: { userId_achievementId: { userId, achievementId: achievement.id } },
         update: {},
-        create: {
-          userId,
-          achievementId: achievement.id,
-        },
+        create: { userId, achievementId: achievement.id },
       });
     }
   }
 
-  // Check revenue achievements
   const allSessions = await prisma.clinicalSession.findMany({
     where: { userId },
     select: { chargedAmount: true },
@@ -164,17 +150,9 @@ async function checkAchievements(userId: string, totalSessions: number, chargedA
   for (const achievement of revenueAchievements) {
     if (achievement.condition) {
       await prisma.userAchievement.upsert({
-        where: {
-          userId_achievementId: {
-            userId,
-            achievementId: achievement.id,
-          },
-        },
+        where: { userId_achievementId: { userId, achievementId: achievement.id } },
         update: {},
-        create: {
-          userId,
-          achievementId: achievement.id,
-        },
+        create: { userId, achievementId: achievement.id },
       });
     }
   }

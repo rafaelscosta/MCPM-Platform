@@ -34,7 +34,7 @@ model User {
   accounts       Account[]
   sessions       Session[]
   clinicalSessions ClinicalSession[]
-  simulations    SimulationResult[]
+  simulationResults SimulationResult[]
   achievements   UserAchievement[]
   moduleProgress ModuleProgress[]
 }
